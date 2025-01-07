@@ -134,7 +134,7 @@ class AlexaResponse {
             };
 
         if (opts.hasOwnProperty("cookie"))
-            endpoint["cookie"] = this.checkValue('cookie', {});
+            endpoint["cookie"] = this.checkValue(opts.cookie, {});
 
         return endpoint
     }
@@ -151,12 +151,16 @@ class AlexaResponse {
         capability['type'] = this.checkValue(opts.type, "AlexaInterface");
         capability['interface'] = this.checkValue(opts.interface, "Alexa");
         capability['version'] = this.checkValue(opts.version, "3");
+        capability['proactivelyReported'] = this.checkValue(opts.proactivelyReported, false);
         let supported = this.checkValue(opts.supported, false);
         if (supported) {
             capability['properties'] = {};
             capability['properties']['supported'] = supported;
-            capability['properties']['proactivelyReported'] = this.checkValue(opts.proactivelyReported, false);
             capability['properties']['retrievable'] = this.checkValue(opts.retrievable, false);
+        }
+        let configuration = this.checkValue(opts.configuration, false);
+        if (configuration) {
+            capability['configuration'] = configuration;
         }
         return capability
     }
