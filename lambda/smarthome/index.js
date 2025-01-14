@@ -59,36 +59,36 @@ exports.handler = async function (event, context) {
     let namespace = ((event.directive || {}).header || {}).namespace;
 
     if (namespace.toLowerCase() === 'alexa.authorization') {
-        let aar = new AlexaResponse({"namespace": "Alexa.Authorization", "name": "AcceptGrant.Response",});
-	let endpointId = event.directive.payload.grantee.token.split(':')[0];
-	let amazon_authorization_code  = event.directive.payload.grant.code;
-	const https = require('https');
-        let promise =  new Promise((resolve, reject) => {
-	const options = {
-	  hostname: 'midoricorp.sipstacks.com',
-	  port: 443,
-	  path: '/cgi-bin/doorbird/token.pl?code=' + endpointId + "&amazon_code=" + amazon_authorization_code,
-	  method: 'GET',
-	  headers: {
-	    'Content-Type': 'application/json',
-	    'Content-Length': 0
-	  }
-	};
-	const req = https.request(options, (res) => {
-	  console.log(`statusCode: ${res.statusCode}`);
-	   resolve(sendResponse(aar.get()));
-	});
+        let aar = new AlexaResponse({ "namespace": "Alexa.Authorization", "name": "AcceptGrant.Response", });
+        let endpointId = event.directive.payload.grantee.token.split(':')[0];
+        let amazon_authorization_code = event.directive.payload.grant.code;
+        const https = require('https');
+        let promise = new Promise((resolve, reject) => {
+            const options = {
+                hostname: 'midoricorp.sipstacks.com',
+                port: 443,
+                path: '/cgi-bin/doorbird/token.pl?code=' + endpointId + "&amazon_code=" + amazon_authorization_code,
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': 0
+                }
+            };
+            const req = https.request(options, (res) => {
+                console.log(`statusCode: ${res.statusCode}`);
+                resolve(sendResponse(aar.get()));
+            });
 
-	req.on('error', (error) => {
-	  console.error(error);
-	  reject(error.message);
-	});
-	req.write('');
-	req.end();
-	});
-	await(promise);
+            req.on('error', (error) => {
+                console.error(error);
+                reject(error.message);
+            });
+            req.write('');
+            req.end();
+        });
+        await (promise);
         return sendResponse(aar.get());
-	
+
     }
 
     if (namespace.toLowerCase() === 'alexa.discovery') {
@@ -142,13 +142,27 @@ exports.handler = async function (event, context) {
             const http = require('http');
             const body = JSON.stringify({
                 "correlationToken": event.directive.header.correlationToken,
-                "offer": event.directive.payload.offer,
+                "offer": event.directive.payload.offer.value,
                 "endpointId": event.directive.endpoint.endpointId,
+                "apiKey": process.env.API_KEY,
             });
+            let endpoint_id = event.directive.endpoint.endpointId;
+            let token = event.directive.endpoint.scope.token;
+            let correlationToken = event.directive.header.correlationToken;
+
+            let ar = new AlexaResponse(
+                {
+                    "correlationToken": correlationToken,
+                    "token": token,
+                    "endpointId": endpoint_id,
+                    "namespace": "Alexa.RTCSessionController",
+                    "name": "AnswerGeneratedForSession",
+                }
+            );
             let promise = new Promise((resolve, reject) => {
                 const options = {
                     hostname: 'midoricorp.sipstacks.com',
-                    port: 8080,
+                    port: 8090,
                     path: '/CALL',
                     method: 'POST',
                     headers: {
@@ -158,7 +172,26 @@ exports.handler = async function (event, context) {
                 };
                 const req = http.request(options, (res) => {
                     console.log(`statusCode: ${res.statusCode}`);
-                    resolve(sendResponse(aar.get()));
+                    let responseData = '';
+
+                    // Collect response data
+                    res.on('data', (chunk) => {
+                        responseData += chunk;
+                    });
+
+                    // Parse JSON once all data is received
+                    res.on('end', () => {
+                        try {
+                            const json = JSON.parse(responseData);
+                            console.log('Parsed JSON:', json);
+                            ar.addPayloadAnswer(json.sdp)
+                            resolve(sendResponse(ar.get()));
+
+                        } catch (error) {
+                            console.error('Error parsing JSON:', error);
+                        }
+                    });
+
                 });
 
                 req.on('error', (error) => {
@@ -171,10 +204,64 @@ exports.handler = async function (event, context) {
                 req.end();
             });
             await (promise);
-            return sendResponse(aar.get());
+            return sendResponse(ar.get());
 
+        } else if (event.directive.header.name === "SessionConnected") {
+            let ar = new AlexaResponse(
+                {
+                    "correlationToken": correlationToken,
+                    "token": token,
+                    "endpointId": endpoint_id,
+                    "namespace": "Alexa.RTCSessionController",
+                    "name": "SessionConnected",
+                }
+            );
+            return sendResponse(ar.get());
+        } else if (event.directive.header.name === "SessionDisconnected") {
+            let endpoint_id = event.directive.endpoint.endpointId;
+            let correlationToken = event.directive.header.correlationToken;
+            let ar = new AlexaResponse(
+                {
+                    "correlationToken": correlationToken,
+                    "endpointId": endpoint_id,
+                    "namespace": "Alexa.RTCSessionController",
+                    "name": "SessionDisconnected",
+                }
+            );
+            const http = require('http');
+            const body = JSON.stringify({
+                "correlationToken": event.directive.header.correlationToken,
+                "endpointId": event.directive.endpoint.endpointId,
+                "apiKey": process.env.API_KEY,
+            });
+            let promise = new Promise((resolve, reject) => {
+                const options = {
+                    hostname: 'midoricorp.sipstacks.com',
+                    port: 8090,
+                    path: '/BYE',
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Content-Length': body.length
+                    }
+                };
+                const req = http.request(options, (res) => {
+                    console.log(`statusCode: ${res.statusCode}`);
+
+                });
+
+                req.on('error', (error) => {
+                    console.error(error);
+                    reject(error.message);
+                });
+                req.write(body);
+
+                console.log("Sending http request with body: " + body);
+                req.end();
+            });
+            await (promise);
+            return sendResponse(ar.get());
         }
-
 
     }
 

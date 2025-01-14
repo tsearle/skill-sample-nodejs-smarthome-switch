@@ -99,6 +99,13 @@ class AlexaResponse {
         this.event.payload.endpoints.push(this.createPayloadEndpoint(opts));
     }
 
+    addPayloadAnswer(sdp) {
+        this.event.payload.answer = {
+            'format': "SDP",
+            'value': sdp
+        };
+    }
+
     /**
      * Creates a property for the context.
      * @param opts Contains options for the property.
